@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="description" content="Congressional STOCK Act filings disclosed in 2026. Amounts are ranges. Not a broker." />
+<meta name="theme-color" content="#0B0B0B" />
+<title>ShowMe</title>
+<style>
+:root { color-scheme: dark; --canvas:#0B0B0B; --surface:#161616; --line:#2A2A2A; --up:#00C805; --down:#FF5000; --ink:#F5F5F5; --mute:#8A8A8A; --tap:44px; }
+* { box-sizing: border-box; }
+html, body { margin:0; background:var(--canvas); color:var(--ink); font-family: Inter, system-ui, sans-serif; }
+button, a { font: inherit; color: inherit; }
+button, [role="button"] { cursor: pointer; }
+a { text-decoration: none; }
+button { background: none; border: 0; }
+.app { max-width: 720px; margin: 0 auto; padding: 16px 16px 96px; }
+h1 { font-size: 28px; letter-spacing: -0.04em; margin: 0; }
+.sub, .meta, .fine { color: var(--mute); font-size: 13px; line-height: 1.4; }
+.row { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; min-height: 64px; border-top: 1px solid var(--line); padding: 8px 0; }
+.av { width: 44px; height: 44px; border-radius: 999px; background: var(--surface); display: grid; place-items: center; font-weight: 600; }
+.name { font-weight: 600; }
+.buy { color: var(--up); } .sell { color: var(--down); }
+.pills, .tabs { display: flex; gap: 8px; overflow: auto; padding: 12px 0; }
+.pill, .tab, .btn { min-height: var(--tap); border: 1px solid var(--line); border-radius: 999px; padding: 0 14px; }
+.pill.on, .tab.on { background: var(--ink); color: var(--canvas); }
+.tabs { position: sticky; top: 0; background: var(--canvas); z-index: 2; }
+input { width: 100%; height: 48px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 16px; font-size: 16px; }
+.card { border-top: 1px solid var(--line); padding: 12px 0; }
+h2 { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mute); margin: 22px 0 8px; }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>ShowMe</h1>
+  <p class="sub">Filed in 2026 · bands, not dollars · <a href="https://hillscore.com/data/">Hillscore</a></p>
+  <nav class="tabs" aria-label="Primary">
+    <button class="tab on" data-view="feed" type="button">Feed</button>
+    <button class="tab" data-view="rank" type="button">Rank</button>
+    <button class="tab" data-view="ipos" type="button">IPOs</button>
+    <button class="tab" data-view="news" type="button">News</button>
+  </nav>
+  <div id="root"></div>
+  <p class="fine">Not a broker. Amounts are statutory ranges. A later percent change is the stock’s move, not the member’s profit. Follows stay in this browser.</p>
+</div>
+<script src="data.js"></script>
+<script>
+const D = window.SHOWME;
+const people = Object.fromEntries(D.people.map(p => [p.id, p]));
+const KEY = "showme.follows";
+let follows = {people:[], tickers:[]};
+try { follows = JSON.parse(localStorage.getItem(KEY)) || follows; } catch (e) {}
+function save() { localStorage.setItem(KEY, JSON.stringify(follows)); }
+function initials(name){ const b=name.split(" ").filter(Boolean); return ((b[0]||"")[0]||"") + ((b.length>1?b[b.length-1][0]:"")||""); }
+function money(n){ if(n>=1e6) return "$"+(n/1e6).toFixed(n>=1e7?0:1)+"M est."; if(n>=10000) return "$"+Math.round(n/1000)+"k est."; return "$"+Math.round(n).toLocaleString("en-US")+" est."; }
+function seat(p){ return [p.chamber, p.party+"-"+p.state].filter(Boolean).join(" · "); }
+let view="feed", filter="all", q="", limit=40;
+const root=document.getElementById("root");
+document.querySelectorAll(".tab").forEach(btn => btn.addEventListener("click", () => { view=btn.dataset.view; limit=40; document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on", b===btn)); draw(); }));
+function rows(){
+  let list=D.trades;
+  const needle=q.trim().toLowerCase();
+  if(needle){
+    list=list.filter(t => {
+      const p=people[t[1]];
+      return t[2].toLowerCase().includes(needle) || t[3].toLowerCase().includes(needle) || (p&&p.name.toLowerCase().includes(needle));
+    });
+  }
+  if(filter==="buys") list=list.filter(t=>t[4]==="buy");
+  if(filter==="sells") list=list.filter(t=>t[4]==="sell");
+  if(filter==="late") list=list.filter(t => (Date.parse(t[8])-Date.parse(t[7]))/86400000 > 45);
+  if(filter==="watch") {
+    const ps=new Set(follows.people), ts=new Set(follows.tickers);
+    list=list.filter(t => ps.has(t[1]) || ts.has(t[2]));
+  }
+  return list;
+}
+function draw(){
+  if(view==="feed") return feed();
+  if(view==="rank") return rank();
+  if(view==="ipos") return ipos();
+  return news();
+}
+function feed(){
+  const list=rows();
+  const shown=list.slice(0, limit);
+  const pills=["all","buys","sells","late","watch"].map(id => `<button class="pill${filter===id?" on":""}" data-f="${id}" type="button">${id==="watch"?"Watchlist":id[0].toUpperCase()+id.slice(1)}</button>`).join("");
+  root.innerHTML = `<input id="q" placeholder="Member, ticker, or company" value="${q.replace(/"/g,""")}" />
+    <div class="pills">${pills}</div>
+    <p class="fine">${list.length.toLocaleString("en-US")} filings in this filter.</p>
+    ${shown.map(rowHtml).join("")}
+    ${shown.length<list.length?`<p><button class="btn" id="more" type="button">Show more · ${(list.length-shown.length).toLocaleString("en-US")} left</button></p>`:""}`;
+  const input=document.getElementById("q");
+  input.addEventListener("input", () => { q=input.value; limit=40; draw(); input.focus(); });
+  root.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { filter=b.dataset.f; limit=40; draw(); }));
+  const more=document.getElementById("more");
+  if(more) more.addEventListener("click", () => { limit+=40; draw(); });
+  root.querySelectorAll("[data-follow]").forEach(b => b.addEventListener("click", () => {
+    const [kind,id]=b.dataset.follow.split(":");
+    const arr=kind==="p"?follows.people:follows.tickers;
+    const i=arr.indexOf(id);
+    if(i>=0) arr.splice(i,1); else arr.push(id);
+    save(); draw();
+  }));
+}
+function rowHtml(t){
+  const p=people[t[1]]||{name:t[1],chamber:"",party:"",state:""};
+  const verb=t[4]==="buy"?"Bought":"Sold";
+  const onP=follows.people.includes(t[1]);
+  return `<article class="row">
+    <div class="av">${initials(p.name).toUpperCase()}</div>
+    <div><div class="name">${p.name}</div><div class="meta">${seat(p)} · filed ${t[8].slice(5)} · traded ${t[7].slice(5)}</div></div>
+    <div class="num"><div class="${t[4]}">${verb} ${t[2]}</div><div class="meta">${t[6]}</div>
+      <button type="button" data-follow="p:${t[1]}">${onP?"Following":"Follow"}</button></div>
+  </article>`;
+}
+function rank(){
+  const block=(title, rows, moneyish)=>`<h2>${title}</h2>`+rows.map(r=>`<div class="card"><div class="name">${r.name}</div><div class="meta">${r.detail}</div><div class="num">${moneyish?money(r.value):""}</div></div>`).join("");
+  root.innerHTML = `<h2>Alerts</h2>`+D.patterns.map(p=>`<div class="card"><div class="name">${p.title}</div><div class="meta">${p.detail}${p.ticker?` · ${p.ticker}`:""}</div></div>`).join("")
+    + block("Top buyers", D.buyers, true)
+    + block("Top sellers", D.sellers, true)
+    + `<h2>Move after a disclosed buy</h2><p class="fine">The stock’s later change. Not profit.</p>`
+    + D.after.map(m=>`<div class="card"><div class="name">${m.ticker} · ${m.name}</div><div class="meta">Bought ${m.tradedAt}${m.sector?` · ${m.sector}`:""}</div><div class="num ${m.ret>=0?"buy":"sell"}">${m.ret>0?"+":""}${m.ret.toFixed(2)}% ${m.label}</div></div>`).join("")
+    + `<h2>Day movers</h2><p class="fine">Delayed Yahoo snapshot, 22 Sep 2026, only for symbols stored with the extract.</p>`
+    + D.movers.map(q=>`<div class="card"><div class="name">${q.symbol}</div><div class="num ${q.day>=0?"buy":"sell"}">${q.price.toFixed(2)} · ${q.day>0?"+":""}${q.day.toFixed(2)}%</div></div>`).join("");
+}
+function ipos(){
+  root.innerHTML = `<p class="fine">A short public calendar. Not every listing.</p>`
+    + ["Upcoming","Recent"].map(status => `<h2>${status}</h2>` + D.ipos.filter(i=>i.status===status).map(i=>`<a class="card" href="${i.href}" target="_blank" rel="noreferrer"><div class="name">${i.ticker} · ${i.name}</div><div class="meta">${i.when} · ${i.detail}</div><div class="meta">${i.source}</div></a>`).join("")).join("");
+}
+function news(){
+  root.innerHTML = D.news.map(n=>`<a class="card" href="${n.href}" target="_blank" rel="noreferrer"><div class="name">${n.title}</div><div class="meta">${n.date} · ${n.source}</div><div class="meta">${n.detail}</div></a>`).join("");
+}
+draw();
+</script>
+</body>
+</html>
